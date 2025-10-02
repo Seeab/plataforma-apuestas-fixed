@@ -1,4 +1,4 @@
-# app.py - VERSIÓN OPTIMIZADA Y CORREGIDA PARA RENDER
+# app.py - VERSIÓN CON FILTRADO POR LIGA
 import pandas as pd
 import numpy as np
 from flask import Flask, request, jsonify, render_template_string
@@ -11,15 +11,38 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 print("🚀 Iniciando plataforma optimizada para Render...")
 
 # =============================================================================
-# 1. CLASE SIMPLIFICADA - SIN TENSORFLOW INICIAL
+# 1. CLASE CON FILTRADO POR LIGA
 # =============================================================================
 class BettingPredictor:
     def __init__(self):
-        self.available_teams = [
-            'Real Madrid', 'Barcelona', 'Manchester United', 'Liverpool',
-            'Bayern Munich', 'PSG', 'Juventus', 'AC Milan', 'Arsenal', 'Chelsea',
-            'Atletico Madrid', 'Inter Milan', 'Borussia Dortmund', 'Manchester City'
-        ]
+        # Mapeo completo de ligas y sus equipos
+        self.league_teams = {
+            'SP1': [  # La Liga (España)
+                'Real Madrid', 'Barcelona', 'Atletico Madrid', 'Sevilla',
+                'Valencia', 'Villarreal', 'Real Betis', 'Athletic Bilbao',
+                'Real Sociedad', 'Celta Vigo'
+            ],
+            'E0': [  # Premier League (Inglaterra)
+                'Manchester United', 'Liverpool', 'Manchester City', 'Chelsea',
+                'Arsenal', 'Tottenham', 'Newcastle', 'Brighton',
+                'West Ham', 'Aston Villa'
+            ],
+            'I1': [  # Serie A (Italia)
+                'Juventus', 'AC Milan', 'Inter Milan', 'Napoli',
+                'Roma', 'Lazio', 'Atalanta', 'Fiorentina',
+                'Bologna', 'Torino'
+            ],
+            'D1': [  # Bundesliga (Alemania)
+                'Bayern Munich', 'Borussia Dortmund', 'RB Leipzig', 'Bayer Leverkusen',
+                'Eintracht Frankfurt', 'Wolfsburg', 'Borussia Monchengladbach',
+                'Hertha Berlin', 'Hoffenheim', 'Mainz'
+            ],
+            'F1': [  # Ligue 1 (Francia)
+                'PSG', 'Marseille', 'Lyon', 'Monaco',
+                'Lille', 'Rennes', 'Nice', 'Lens',
+                'Nantes', 'Toulouse'
+            ]
+        }
         
         self.league_mapping = {
             'SP1': 'La Liga (España)',
@@ -32,9 +55,22 @@ class BettingPredictor:
     def get_division_full_name(self, division_abbr):
         return self.league_mapping.get(division_abbr, division_abbr)
 
+    def get_teams_by_league(self, league):
+        """Obtiene equipos filtrados por liga"""
+        return self.league_teams.get(league, [])
+
+    def get_all_teams(self):
+        """Obtiene todos los equipos únicos (para inicialización)"""
+        all_teams = set()
+        for teams in self.league_teams.values():
+            all_teams.update(teams)
+        return sorted(list(all_teams))
+
     def predict_match(self, home_team, away_team, division, house_margin=0.12):
         """Predicción simplificada para demo"""
-        if home_team not in self.available_teams or away_team not in self.available_teams:
+        # Verificar que los equipos pertenezcan a la liga seleccionada
+        league_teams = self.get_teams_by_league(division)
+        if home_team not in league_teams or away_team not in league_teams:
             return None
 
         # Simular probabilidades basadas en equipos conocidos
@@ -71,25 +107,48 @@ class BettingPredictor:
 
     def _calculate_base_probabilities(self, home_team, away_team):
         """Calcula probabilidades base según equipos"""
-        # Equipos fuertes (para demo)
-        strong_teams = ['Real Madrid', 'Barcelona', 'Bayern Munich', 'Manchester City', 'PSG']
+        # Equipos fuertes por liga (para demo más realista)
+        strong_teams = {
+            'SP1': ['Real Madrid', 'Barcelona', 'Atletico Madrid'],
+            'E0': ['Manchester City', 'Liverpool', 'Arsenal'],
+            'I1': ['Inter Milan', 'AC Milan', 'Juventus'],
+            'D1': ['Bayern Munich', 'Borussia Dortmund'],
+            'F1': ['PSG']
+        }
         
-        if home_team in strong_teams and away_team not in strong_teams:
-            return np.array([0.55, 0.25, 0.20])  # Local favorito
-        elif away_team in strong_teams and home_team not in strong_teams:
-            return np.array([0.25, 0.25, 0.50])  # Visitante favorito
-        elif home_team in strong_teams and away_team in strong_teams:
-            return np.array([0.35, 0.30, 0.35])  # Partido parejo
+        # Determinar qué liga pertenecen los equipos
+        home_league = None
+        away_league = None
+        
+        for league, teams in self.league_teams.items():
+            if home_team in teams:
+                home_league = league
+            if away_team in teams:
+                away_league = league
+        
+        # Si son de la misma liga, usar lógica de esa liga
+        if home_league == away_league:
+            strong_in_league = strong_teams.get(home_league, [])
+            
+            if home_team in strong_in_league and away_team not in strong_in_league:
+                return np.array([0.60, 0.25, 0.15])  # Local fuerte favorito
+            elif away_team in strong_in_league and home_team not in strong_in_league:
+                return np.array([0.25, 0.25, 0.50])  # Visitante fuerte favorito
+            elif home_team in strong_in_league and away_team in strong_in_league:
+                return np.array([0.40, 0.30, 0.30])  # Partido de titanes
+            else:
+                return np.array([0.45, 0.30, 0.25])  # Partido equilibrado
         else:
-            return np.array([0.40, 0.30, 0.30])  # Partido equilibrado
+            # Partido entre ligas diferentes (ej: Champions League)
+            return np.array([0.35, 0.30, 0.35])  # Más incierto
 
 # =============================================================================
-# 2. APLICACIÓN FLASK
+# 2. APLICACIÓN FLASK ACTUALIZADA
 # =============================================================================
 app = Flask(__name__)
 predictor = BettingPredictor()
 
-# HTML Template optimizado
+# HTML Template actualizado con JavaScript para filtrado
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -129,11 +188,16 @@ HTML_TEMPLATE = '''
             border-radius: 5px; font-size: 16px; cursor: pointer; width: 100%; 
         }
         .btn:hover { background: #1a6a8a; }
+        .btn:disabled { background: #cccccc; cursor: not-allowed; }
         .result-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
         .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 15px 0; }
         .metric { background: rgba(255,255,255,0.2); padding: 15px; border-radius: 10px; text-align: center; }
         .metric-value { font-size: 1.5em; font-weight: bold; margin: 5px 0; }
         .loading { text-align: center; padding: 20px; }
+        .league-info { 
+            background: #e8f4f8; padding: 10px; border-radius: 5px; 
+            margin-bottom: 15px; border-left: 4px solid #2E86AB;
+        }
         @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -150,7 +214,7 @@ HTML_TEMPLATE = '''
                 <form id="predictionForm">
                     <div class="form-group">
                         <label>Liga:</label>
-                        <select class="form-control" id="division">
+                        <select class="form-control" id="division" onchange="updateTeams()">
                             <option value="SP1">La Liga (España)</option>
                             <option value="E0">Premier League (Inglaterra)</option>
                             <option value="I1">Serie A (Italia)</option>
@@ -158,27 +222,29 @@ HTML_TEMPLATE = '''
                             <option value="F1">Ligue 1 (Francia)</option>
                         </select>
                     </div>
+                    
+                    <div class="league-info" id="leagueInfo">
+                        <strong id="currentLeague">La Liga (España)</strong> - 
+                        <span id="teamCount">10 equipos disponibles</span>
+                    </div>
+                    
                     <div class="form-group">
                         <label>Equipo Local:</label>
                         <select class="form-control" id="home_team">
-                            {% for team in teams %}
-                            <option value="{{ team }}">{{ team }}</option>
-                            {% endfor %}
+                            <!-- equipos se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Equipo Visitante:</label>
                         <select class="form-control" id="away_team">
-                            {% for team in teams %}
-                            <option value="{{ team }}">{{ team }}</option>
-                            {% endfor %}
+                            <!-- equipos se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Monto Apuesta ($):</label>
                         <input type="number" class="form-control" id="bet_amount" value="100" min="10" max="1000">
                     </div>
-                    <button type="button" class="btn" onclick="makePrediction()">
+                    <button type="button" class="btn" id="predictBtn" onclick="makePrediction()">
                         🎯 Calcular Predicción
                     </button>
                 </form>
@@ -188,7 +254,7 @@ HTML_TEMPLATE = '''
                 <h2>📊 Resultados</h2>
                 <div id="results">
                     <div class="loading">
-                        <p>Selecciona equipos y haz click en Calcular Predicción</p>
+                        <p>Selecciona una liga y equipos para calcular predicción</p>
                     </div>
                 </div>
             </div>
@@ -206,17 +272,75 @@ HTML_TEMPLATE = '''
             <h2>ℹ️ Información del Sistema</h2>
             <div id="systemInfo">
                 <p><strong>Estado:</strong> <span id="status">Conectado</span></p>
-                <p><strong>Equipos disponibles:</strong> {{ teams|length }}</p>
                 <p><strong>Ligas disponibles:</strong> 5</p>
-                <p><strong>Versión:</strong> 2.0 - Optimizada para Render</p>
+                <p><strong>Equipos por liga:</strong> 10</p>
+                <p><strong>Versión:</strong> 2.1 - Con filtrado por liga</p>
             </div>
         </div>
     </div>
 
     <script>
+        // Datos de equipos por liga
+        const leagueTeams = {
+            'SP1': ['Real Madrid', 'Barcelona', 'Atletico Madrid', 'Sevilla', 'Valencia', 'Villarreal', 'Real Betis', 'Athletic Bilbao', 'Real Sociedad', 'Celta Vigo'],
+            'E0': ['Manchester United', 'Liverpool', 'Manchester City', 'Chelsea', 'Arsenal', 'Tottenham', 'Newcastle', 'Brighton', 'West Ham', 'Aston Villa'],
+            'I1': ['Juventus', 'AC Milan', 'Inter Milan', 'Napoli', 'Roma', 'Lazio', 'Atalanta', 'Fiorentina', 'Bologna', 'Torino'],
+            'D1': ['Bayern Munich', 'Borussia Dortmund', 'RB Leipzig', 'Bayer Leverkusen', 'Eintracht Frankfurt', 'Wolfsburg', 'Borussia Monchengladbach', 'Hertha Berlin', 'Hoffenheim', 'Mainz'],
+            'F1': ['PSG', 'Marseille', 'Lyon', 'Monaco', 'Lille', 'Rennes', 'Nice', 'Lens', 'Nantes', 'Toulouse']
+        };
+
+        const leagueNames = {
+            'SP1': 'La Liga (España)',
+            'E0': 'Premier League (Inglaterra)',
+            'I1': 'Serie A (Italia)',
+            'D1': 'Bundesliga (Alemania)',
+            'F1': 'Ligue 1 (Francia)'
+        };
+
+        function updateTeams() {
+            const leagueSelect = document.getElementById('division');
+            const homeSelect = document.getElementById('home_team');
+            const awaySelect = document.getElementById('away_team');
+            const leagueInfo = document.getElementById('leagueInfo');
+            const currentLeague = document.getElementById('currentLeague');
+            const teamCount = document.getElementById('teamCount');
+            
+            const selectedLeague = leagueSelect.value;
+            const teams = leagueTeams[selectedLeague] || [];
+            const leagueName = leagueNames[selectedLeague];
+            
+            // Actualizar información de la liga
+            currentLeague.textContent = leagueName;
+            teamCount.textContent = `${teams.length} equipos disponibles`;
+            
+            // Limpiar selects
+            homeSelect.innerHTML = '';
+            awaySelect.innerHTML = '';
+            
+            // Llenar con equipos de la liga seleccionada
+            teams.forEach(team => {
+                const homeOption = new Option(team, team);
+                const awayOption = new Option(team, team);
+                homeSelect.add(homeOption);
+                awaySelect.add(awayOption);
+            });
+            
+            // Resetear resultados
+            document.getElementById('results').innerHTML = `
+                <div class="loading">
+                    <p>Selecciona equipos diferentes y haz click en Calcular Predicción</p>
+                </div>
+            `;
+            
+            // Resetear gráficos
+            document.getElementById('probChart').innerHTML = '';
+            document.getElementById('oddsChart').innerHTML = '';
+        }
+
         function makePrediction() {
             const homeTeam = document.getElementById('home_team').value;
             const awayTeam = document.getElementById('away_team').value;
+            const league = document.getElementById('division').value;
             
             if (homeTeam === awayTeam) {
                 alert('⚠️ Por favor selecciona equipos diferentes');
@@ -226,15 +350,20 @@ HTML_TEMPLATE = '''
             const data = {
                 home_team: homeTeam,
                 away_team: awayTeam,
-                division: document.getElementById('division').value,
+                division: league,
                 bet_amount: document.getElementById('bet_amount').value
             };
             
             document.getElementById('results').innerHTML = `
                 <div class="loading">
-                    <p>🔄 Calculando predicción...</p>
+                    <p>🔄 Calculando predicción para ${homeTeam} vs ${awayTeam}...</p>
                 </div>
             `;
+            
+            // Deshabilitar botón temporalmente
+            const predictBtn = document.getElementById('predictBtn');
+            predictBtn.disabled = true;
+            predictBtn.textContent = '🔄 Calculando...';
             
             fetch('/api/predict', {
                 method: 'POST',
@@ -260,6 +389,11 @@ HTML_TEMPLATE = '''
                         <p>❌ Error de conexión</p>
                     </div>
                 `;
+            })
+            .finally(() => {
+                // Re-habilitar botón
+                predictBtn.disabled = false;
+                predictBtn.textContent = '🎯 Calcular Predicción';
             });
         }
         
@@ -335,7 +469,6 @@ HTML_TEMPLATE = '''
             const awaySelect = document.getElementById('away_team');
             const homeValue = this.value;
             
-            // Si son iguales, cambiar el visitante
             if (awaySelect.value === homeValue) {
                 const options = Array.from(awaySelect.options);
                 const differentOption = options.find(opt => opt.value !== homeValue);
@@ -349,7 +482,6 @@ HTML_TEMPLATE = '''
             const homeSelect = document.getElementById('home_team');
             const awayValue = this.value;
             
-            // Si son iguales, cambiar el local
             if (homeSelect.value === awayValue) {
                 const options = Array.from(homeSelect.options);
                 const differentOption = options.find(opt => opt.value !== awayValue);
@@ -358,6 +490,11 @@ HTML_TEMPLATE = '''
                 }
             }
         });
+
+        // Inicializar al cargar la página
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTeams();
+        });
     </script>
 </body>
 </html>
@@ -365,7 +502,7 @@ HTML_TEMPLATE = '''
 
 @app.route('/')
 def home():
-    return render_template_string(HTML_TEMPLATE, teams=predictor.available_teams)
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
@@ -401,17 +538,28 @@ def api_predict():
                 'bet_amount': float(data.get('bet_amount', 100))
             })
         else:
-            return jsonify({'success': False, 'error': 'Error en la predicción'})
+            return jsonify({
+                'success': False, 
+                'error': 'Los equipos seleccionados no pertenecen a esta liga'
+            })
             
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/teams/<league>')
+def api_teams(league):
+    """API para obtener equipos por liga"""
+    try:
+        teams = predictor.get_teams_by_league(league)
+        return jsonify(teams)
+    except Exception as e:
+        return jsonify([])
 
 @app.route('/api/status')
 def status():
     return jsonify({
         'status': 'online',
-        'version': '2.0-optimized',
-        'teams_available': len(predictor.available_teams),
+        'version': '2.1-with-league-filter',
         'leagues_available': len(predictor.league_mapping),
         'environment': 'production'
     })
