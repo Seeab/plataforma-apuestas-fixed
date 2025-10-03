@@ -3,6 +3,7 @@ Flask==2.3.3
 requests==2.31.0
 # pandas==1.5.3
 numpy==2.0.0
+flask-cors==4.0.0
 gunicorn==21.2.0
 setuptools==65.5.0
 wheel==0.38.4
