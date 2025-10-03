@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuración - URL de tu API de red neuronal
-NEURAL_API_URL = os.environ.get('NEURAL_API_URL', 'http://localhost:8000')
+NEURAL_API_URL = os.environ.get('NEURAL_API_URL', 'https://neural-api-predictor.onrender.com')
 logger.info(f"🔗 Conectando a API de red neuronal: {NEURAL_API_URL}")
 
 class APIClient:
