@@ -1,5 +1,8 @@
+cat > requirements_app.txt << 'EOF'
+# requirements_app.txt - Para la app Flask en Render
 Flask==2.3.3
 requests==2.31.0
 pandas==2.0.3
 numpy==1.24.3
 gunicorn==21.2.0
+EOF

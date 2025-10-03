@@ -1,3 +1,5 @@
+cat > requirements_api.txt << 'EOF'
+# requirements_api.txt - Para la API FastAPI (servicio separado)
 fastapi==0.104.1
 uvicorn==0.24.0
 tensorflow==2.20.0
@@ -5,3 +7,4 @@ scikit-learn==1.3.0
 pandas==2.0.3
 numpy==1.24.3
 python-multipart==0.0.6
+EOF
