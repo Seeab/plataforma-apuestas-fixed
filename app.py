@@ -1,8 +1,9 @@
-# app.py - APP FLASK ACTUALIZADA PARA RENDER
+# app.py - APP FLASK ACTUALIZADA Y CORREGIDA PARA RENDER
 import requests
 from flask import Flask, request, jsonify, render_template_string
 import os
 import logging
+import time
 from typing import Dict, List, Optional
 
 # Configurar logging
@@ -21,20 +22,35 @@ class APIClient:
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
-            'User-Agent': 'BettingApp-Render/2.0'
+            'User-Agent': 'BettingApp-Flask/3.0'
         })
     
     def health_check(self):
-        """Verificar estado de la API"""
-        try:
-            response = self.session.get(f"{self.base_url}/health", timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                return True, data
-            return False, None
-        except Exception as e:
-            logger.error(f"❌ Error en health check: {e}")
-            return False, None
+        """Verificar estado de la API con retry"""
+        for attempt in range(3):
+            try:
+                logger.info(f"🔍 Health check attempt {attempt + 1} to {self.base_url}/health")
+                response = self.session.get(f"{self.base_url}/health", timeout=10)
+                logger.info(f"📊 Health check response: {response.status_code}")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"✅ API Health: {data}")
+                    return True, data
+                else:
+                    logger.warning(f"❌ Health check failed: {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"⏰ Health check timeout attempt {attempt + 1}")
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"🔌 Health check connection error attempt {attempt + 1}: {e}")
+            except Exception as e:
+                logger.warning(f"⚠️ Health check error attempt {attempt + 1}: {e}")
+            
+            if attempt < 2:
+                time.sleep(2)  # Esperar 2 segundos entre intentos
+        
+        return False, None
     
     def predict_match(self, home_team: str, away_team: str, division: str, house_margin: float = 0.12):
         """Obtener predicción desde la API de red neuronal"""
@@ -43,6 +59,8 @@ class APIClient:
                 "home_team": home_team,
                 "away_team": away_team,
                 "division": division,
+                "year": 2024,  # Añadir año requerido
+                "month": 5,    # Añadir mes requerido
                 "house_margin": house_margin
             }
             
@@ -51,8 +69,10 @@ class APIClient:
             response = self.session.post(
                 f"{self.base_url}/predict", 
                 json=data,
-                timeout=15
+                timeout=20
             )
+            
+            logger.info(f"📨 Predict response status: {response.status_code}")
             
             if response.status_code == 200:
                 result = response.json()
@@ -63,9 +83,9 @@ class APIClient:
                 try:
                     error_data = response.json()
                     error_msg = error_data.get('detail', error_msg)
+                    logger.error(f"❌ Error en predicción: {error_msg}")
                 except:
-                    pass
-                logger.error(f"❌ Error en predicción: {error_msg}")
+                    logger.error(f"❌ Error en predicción: {response.text}")
                 return None
                 
         except requests.exceptions.Timeout:
@@ -82,11 +102,17 @@ class APIClient:
             if division:
                 url += f"?division={division}"
                 
-            response = self.session.get(url, timeout=10)
+            logger.info(f"🔍 Obteniendo equipos desde: {url}")
+            response = self.session.get(url, timeout=15)
+            logger.info(f"📊 Teams response status: {response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
+                logger.info(f"✅ Equipos obtenidos: {len(data.get('teams', []))} equipos")
                 return data.get('teams', [])
-            return []
+            else:
+                logger.error(f"❌ Error obteniendo equipos: {response.status_code}")
+                return []
         except Exception as e:
             logger.error(f"❌ Error obteniendo equipos: {e}")
             return []
@@ -94,11 +120,19 @@ class APIClient:
     def get_available_divisions(self):
         """Obtener divisiones disponibles desde la API"""
         try:
-            response = self.session.get(f"{self.base_url}/divisions", timeout=10)
+            url = f"{self.base_url}/divisions"
+            logger.info(f"🔍 Obteniendo divisiones desde: {url}")
+            response = self.session.get(url, timeout=15)
+            logger.info(f"📊 Divisions response status: {response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
-                return data.get('divisions', {})
-            return {}
+                divisions = data.get('divisions', {})
+                logger.info(f"✅ Divisiones obtenidas: {len(divisions)} divisiones")
+                return divisions
+            else:
+                logger.error(f"❌ Error obteniendo divisiones: {response.status_code}")
+                return {}
         except Exception as e:
             logger.error(f"❌ Error obteniendo divisiones: {e}")
             return {}
@@ -106,7 +140,10 @@ class APIClient:
     def get_team_suggestions(self, team_name: str):
         """Obtener sugerencias de equipos"""
         try:
-            response = self.session.get(f"{self.base_url}/team-suggestions/{team_name}", timeout=5)
+            url = f"{self.base_url}/team-suggestions/{team_name}"
+            logger.info(f"🔍 Obteniendo sugerencias desde: {url}")
+            response = self.session.get(url, timeout=10)
+            
             if response.status_code == 200:
                 data = response.json()
                 return data.get('suggestions', [])
@@ -118,7 +155,7 @@ class APIClient:
 # Inicializar cliente de API
 api_client = APIClient(NEURAL_API_URL)
 
-# HTML Template actualizado
+# HTML Template actualizado y corregido
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -183,6 +220,10 @@ HTML_TEMPLATE = '''
             background: linear-gradient(45deg, #FF6B6B, #4ECDC4); 
             color: white; padding: 3px 8px; border-radius: 12px; 
             font-size: 0.8em; margin-left: 10px; 
+        }
+        .error-message { 
+            background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; 
+            margin: 10px 0; border-left: 4px solid #dc3545;
         }
         @media (max-width: 768px) { 
             .grid { grid-template-columns: 1fr; } 
@@ -291,8 +332,10 @@ HTML_TEMPLATE = '''
         // Verificar estado de la API al cargar
         async function checkAPIStatus() {
             try {
+                console.log('🔍 Verificando estado de la API...');
                 const response = await fetch('/api/status');
                 const data = await response.json();
+                console.log('📊 Estado API:', data);
                 
                 const statusElement = document.getElementById('apiStatus');
                 if (data.api_online && data.neural_model_loaded) {
@@ -316,6 +359,7 @@ HTML_TEMPLATE = '''
                 }
                 loadDivisions();
             } catch (error) {
+                console.error('❌ Error verificando estado:', error);
                 document.getElementById('apiStatus').className = 'api-status api-offline';
                 document.getElementById('apiStatus').innerHTML = '❌ Error de conexión - Modo demo';
                 apiOnline = false;
@@ -335,8 +379,10 @@ HTML_TEMPLATE = '''
         // Cargar divisiones disponibles
         async function loadDivisions() {
             try {
+                console.log('🔍 Cargando divisiones...');
                 const response = await fetch('/api/divisions');
                 const data = await response.json();
+                console.log('📊 Divisiones:', data);
                 
                 if (data.success) {
                     availableDivisions = data.divisions;
@@ -349,9 +395,14 @@ HTML_TEMPLATE = '''
                     }
                     
                     divisionSelect.disabled = false;
+                    console.log('✅ Divisiones cargadas:', Object.keys(availableDivisions).length);
+                } else {
+                    console.error('❌ Error cargando divisiones:', data.error);
+                    document.getElementById('division').innerHTML = '<option value="">Error cargando ligas</option>';
                 }
             } catch (error) {
-                console.error('Error cargando divisiones:', error);
+                console.error('❌ Error cargando divisiones:', error);
+                document.getElementById('division').innerHTML = '<option value="">Error de conexión</option>';
             }
         }
 
@@ -372,8 +423,10 @@ HTML_TEMPLATE = '''
             document.getElementById('awaySuggestions').innerHTML = '';
             
             try {
+                console.log(`🔍 Cargando equipos para división: ${division}`);
                 const response = await fetch(`/api/teams?division=${division}`);
                 const data = await response.json();
+                console.log('📊 Equipos:', data);
                 
                 if (data.success) {
                     availableTeams = data.teams;
@@ -396,11 +449,16 @@ HTML_TEMPLATE = '''
                     predictBtn.textContent = neuralModelLoaded ? 
                         '🎯 Consultar Red Neuronal' : '❌ IA No Disponible';
                     
+                    console.log(`✅ Equipos cargados: ${availableTeams.length} equipos`);
+                } else {
+                    console.error('❌ Error cargando equipos:', data.error);
+                    homeSelect.innerHTML = '<option value="">Error cargando equipos</option>';
+                    awaySelect.innerHTML = '<option value="">Error cargando equipos</option>';
                 }
             } catch (error) {
-                console.error('Error cargando equipos:', error);
-                homeSelect.innerHTML = '<option value="">Error cargando equipos</option>';
-                awaySelect.innerHTML = '<option value="">Error cargando equipos</option>';
+                console.error('❌ Error cargando equipos:', error);
+                homeSelect.innerHTML = '<option value="">Error de conexión</option>';
+                awaySelect.innerHTML = '<option value="">Error de conexión</option>';
             }
         }
 
@@ -451,10 +509,6 @@ HTML_TEMPLATE = '''
                 return;
             }
             
-            if (!neuralModelLoaded) {
-                alert('El modelo de IA no está disponible. Usando modo demo.');
-            }
-            
             const predictBtn = document.getElementById('predictBtn');
             predictBtn.disabled = true;
             predictBtn.textContent = '🔄 Consultando IA...';
@@ -468,6 +522,7 @@ HTML_TEMPLATE = '''
             `;
             
             try {
+                console.log('🎯 Enviando solicitud de predicción...');
                 const response = await fetch('/api/predict', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -481,21 +536,23 @@ HTML_TEMPLATE = '''
                 });
                 
                 const result = await response.json();
+                console.log('📊 Resultado predicción:', result);
                 
                 if (result.success) {
                     displayResults(result);
                     updateCharts(result);
                 } else {
                     document.getElementById('results').innerHTML = `
-                        <div class="loading">
+                        <div class="error-message">
                             <p>❌ Error: ${result.error || 'Error en la predicción'}</p>
                             ${result.suggestions ? `<p>💡 Sugerencias: ${result.suggestions.join(', ')}</p>` : ''}
                         </div>
                     `;
                 }
             } catch (error) {
+                console.error('❌ Error en predicción:', error);
                 document.getElementById('results').innerHTML = `
-                    <div class="loading">
+                    <div class="error-message">
                         <p>❌ Error de conexión con la IA</p>
                         <p>Intenta nuevamente en unos momentos</p>
                     </div>
@@ -632,6 +689,7 @@ HTML_TEMPLATE = '''
 
         // Inicializar
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Inicializando aplicación...');
             checkAPIStatus();
             document.getElementById('marginValue').textContent = document.getElementById('house_margin').value + '%';
         });
@@ -648,6 +706,7 @@ def home():
 def api_status():
     """Verificar estado de la conexión con la API de IA"""
     try:
+        logger.info("🔍 Verificando estado de la API de red neuronal...")
         api_online, health_data = api_client.health_check()
         
         response_data = {
@@ -659,10 +718,11 @@ def api_status():
             'available_divisions': health_data.get('available_divisions_count', 0) if health_data else 0,
         }
         
+        logger.info(f"📊 Estado API: {response_data}")
         return jsonify(response_data)
         
     except Exception as e:
-        logger.error(f"Error checking API status: {e}")
+        logger.error(f"❌ Error checking API status: {e}")
         return jsonify({
             'success': False,
             'api_online': False,
@@ -674,20 +734,23 @@ def api_status():
 def api_divisions():
     """Obtener divisiones disponibles desde la API de IA"""
     try:
+        logger.info("🔍 Obteniendo divisiones...")
         divisions = api_client.get_available_divisions()
         if divisions:
+            logger.info(f"✅ Divisiones obtenidas: {len(divisions)}")
             return jsonify({
                 'success': True,
                 'divisions': divisions,
                 'total': len(divisions)
             })
         else:
+            logger.error("❌ No se pudieron cargar las divisiones")
             return jsonify({
                 'success': False,
                 'error': 'No se pudieron cargar las divisiones'
             })
     except Exception as e:
-        logger.error(f"Error getting divisions: {e}")
+        logger.error(f"❌ Error getting divisions: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -698,15 +761,24 @@ def api_teams():
     """Obtener equipos disponibles desde la API de IA"""
     division = request.args.get('division', '')
     try:
+        logger.info(f"🔍 Obteniendo equipos para división: {division}")
         teams = api_client.get_available_teams(division)
-        return jsonify({
-            'success': True,
-            'teams': teams,
-            'total': len(teams),
-            'division': division
-        })
+        if teams is not None:
+            logger.info(f"✅ Equipos obtenidos: {len(teams)} equipos")
+            return jsonify({
+                'success': True,
+                'teams': teams,
+                'total': len(teams),
+                'division': division
+            })
+        else:
+            logger.error("❌ Error obteniendo equipos")
+            return jsonify({
+                'success': False,
+                'error': 'Error obteniendo equipos'
+            })
     except Exception as e:
-        logger.error(f"Error getting teams: {e}")
+        logger.error(f"❌ Error getting teams: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -717,6 +789,7 @@ def api_team_suggestions():
     """Obtener sugerencias de equipos"""
     team_name = request.args.get('team_name', '')
     try:
+        logger.info(f"🔍 Obteniendo sugerencias para: {team_name}")
         suggestions = api_client.get_team_suggestions(team_name)
         return jsonify({
             'success': True,
@@ -725,7 +798,7 @@ def api_team_suggestions():
             'total': len(suggestions)
         })
     except Exception as e:
-        logger.error(f"Error getting team suggestions: {e}")
+        logger.error(f"❌ Error getting team suggestions: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -736,18 +809,23 @@ def api_predict():
     """Obtener predicción desde la API de IA"""
     try:
         data = request.json
+        logger.info(f"🎯 Recibida solicitud de predicción: {data}")
         
         # Validaciones básicas
         if not data.get('home_team') or not data.get('away_team') or not data.get('division'):
+            error_msg = 'Faltan datos requeridos: home_team, away_team, division'
+            logger.error(f"❌ {error_msg}")
             return jsonify({
                 'success': False,
-                'error': 'Faltan datos requeridos: home_team, away_team, division'
+                'error': error_msg
             })
         
         if data['home_team'] == data['away_team']:
+            error_msg = 'Los equipos deben ser diferentes'
+            logger.error(f"❌ {error_msg}")
             return jsonify({
                 'success': False,
-                'error': 'Los equipos deben ser diferentes'
+                'error': error_msg
             })
         
         # Obtener predicción de la API de red neuronal
