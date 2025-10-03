@@ -1,6 +1,7 @@
-# app.py - APP FLASK ACTUALIZADA Y CORREGIDA PARA RENDER
+# app.py - APP FLASK COMPLETA CON MEJORAS Y DEBUGGING
 import requests
 from flask import Flask, request, jsonify, render_template_string
+from flask_cors import CORS
 import os
 import logging
 import time
@@ -11,6 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 
 # Configuración - URL de tu API de red neuronal
 NEURAL_API_URL = os.environ.get('NEURAL_API_URL', 'https://neural-api-predictor.onrender.com')
@@ -22,55 +24,118 @@ class APIClient:
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             'User-Agent': 'BettingApp-Flask/3.0'
         })
-    
-    def health_check(self):
-        """Verificar estado de la API con retry"""
-        for attempt in range(3):
-            try:
-                logger.info(f"🔍 Health check attempt {attempt + 1} to {self.base_url}/health")
-                response = self.session.get(f"{self.base_url}/health", timeout=10)
-                logger.info(f"📊 Health check response: {response.status_code}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    logger.info(f"✅ API Health: {data}")
-                    return True, data
-                else:
-                    logger.warning(f"❌ Health check failed: {response.status_code}")
-                    # Si /health no funciona, probar con el endpoint raíz
-                    if response.status_code == 404:
-                        logger.info("🔄 Probando endpoint raíz...")
-                        response_root = self.session.get(f"{self.base_url}/", timeout=10)
-                        if response_root.status_code == 200:
-                            return True, {"model_loaded": True, "available_teams_count": 774, "available_divisions_count": 38}
-                    
-            except requests.exceptions.Timeout:
-                logger.warning(f"⏰ Health check timeout attempt {attempt + 1}")
-            except requests.exceptions.ConnectionError as e:
-                logger.warning(f"🔌 Health check connection error attempt {attempt + 1}: {e}")
-            except Exception as e:
-                logger.warning(f"⚠️ Health check error attempt {attempt + 1}: {e}")
-            
-            if attempt < 2:
-                time.sleep(2)  # Esperar 2 segundos entre intentos
         
-        return False, None
+    def health_check(self):
+        """Verificar estado de la API - USANDO ENDPOINT /health"""
+        try:
+            logger.info(f"🔍 Probando health check en {self.base_url}/health")
+            response = self.session.get(f"{self.base_url}/health", timeout=10)
+            logger.info(f"📊 Health check status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Health check exitoso: {data}")
+                return True, data
+            else:
+                logger.warning(f"❌ Health check falló: {response.status_code}")
+                # Fallback al endpoint raíz
+                return self._fallback_health_check()
+                    
+        except Exception as e:
+            logger.error(f"❌ Error en health check: {e}")
+            return self._fallback_health_check()
     
+    def _fallback_health_check(self):
+        """Fallback si /health no funciona"""
+        try:
+            logger.info("🔄 Intentando fallback al endpoint raíz...")
+            response = self.session.get(f"{self.base_url}/", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                logger.info("✅ Fallback exitoso")
+                return True, data
+            return False, None
+        except Exception as e:
+            logger.error(f"❌ Fallback también falló: {e}")
+            return False, None
+    
+    def get_available_divisions(self):
+        """Obtener divisiones disponibles desde la API"""
+        try:
+            url = f"{self.base_url}/divisions"
+            logger.info(f"🔍 Obteniendo divisiones desde: {url}")
+            response = self.session.get(url, timeout=15)
+            logger.info(f"📊 Divisions status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"📋 Divisions response: {data}")
+                
+                if data.get('success'):
+                    divisions = data.get('divisions', {})
+                    logger.info(f"✅ Divisiones obtenidas: {len(divisions)}")
+                    return divisions
+                else:
+                    logger.error(f"❌ API retornó success: false - {data.get('error')}")
+                    return self._get_demo_divisions()
+            else:
+                logger.error(f"❌ Error HTTP obteniendo divisions: {response.status_code}")
+                logger.error(f"📄 Response text: {response.text}")
+                return self._get_demo_divisions()
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo divisiones: {e}")
+            return self._get_demo_divisions()
+    
+    def get_available_teams(self, division: Optional[str] = None):
+        """Obtener equipos disponibles desde la API - CON DEBUG"""
+        try:
+            url = f"{self.base_url}/teams"
+            if division:
+                url += f"?division={division}"
+                
+            logger.info(f"🔍 Obteniendo equipos desde: {url}")
+            response = self.session.get(url, timeout=15)
+            logger.info(f"📊 Teams status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"📋 Teams response keys: {list(data.keys())}")
+                
+                if data.get('success'):
+                    teams = data.get('teams', [])
+                    logger.info(f"✅ Equipos obtenidos: {len(teams)}")
+                    if teams:
+                        logger.info(f"📋 Primeros 5 equipos: {teams[:5]}")
+                        logger.info(f"📋 Últimos 5 equipos: {teams[-5:]}")
+                    return teams
+                else:
+                    logger.error(f"❌ API retornó success: false - {data.get('error')}")
+                    return self._get_demo_teams(division)
+            else:
+                logger.error(f"❌ Error HTTP obteniendo teams: {response.status_code}")
+                logger.error(f"📄 Response text: {response.text}")
+                return self._get_demo_teams(division)
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo equipos: {e}")
+            return self._get_demo_teams(division)
+
     def predict_match(self, home_team: str, away_team: str, division: str, house_margin: float = 0.12):
-        """Obtener predicción desde la API de red neuronal"""
+        """Obtener predicción desde la API de red neuronal - CORREGIDO"""
         try:
             data = {
                 "home_team": home_team,
                 "away_team": away_team,
                 "division": division,
-                "year": 2024,  # Añadir año requerido
-                "month": 5,    # Añadir mes requerido
+                "year": 2024,
+                "month": 5,
                 "house_margin": house_margin
             }
             
             logger.info(f"🎯 Solicitando predicción: {home_team} vs {away_team} ({division})")
+            logger.info(f"📤 Datos enviados: {data}")
             
             response = self.session.post(
                 f"{self.base_url}/predict", 
@@ -82,7 +147,7 @@ class APIClient:
             
             if response.status_code == 200:
                 result = response.json()
-                logger.info(f"✅ Predicción recibida exitosamente")
+                logger.info("✅ Predicción recibida exitosamente")
                 return result
             else:
                 error_msg = f"Error {response.status_code}"
@@ -90,60 +155,18 @@ class APIClient:
                     error_data = response.json()
                     error_msg = error_data.get('detail', error_data.get('error', error_msg))
                     logger.error(f"❌ Error en predicción: {error_msg}")
+                    
+                    # Si es 400 Bad Request, mostrar sugerencias
+                    if response.status_code == 400 and 'Sugerencias' in error_msg:
+                        logger.info(f"💡 La API sugiere: {error_msg}")
+                        
                 except:
                     logger.error(f"❌ Error en predicción: {response.text}")
                 return None
                 
-        except requests.exceptions.Timeout:
-            logger.error("⏰ Timeout en la solicitud de predicción")
-            return None
         except Exception as e:
             logger.error(f"❌ Error llamando a la API: {e}")
             return None
-    
-    def get_available_teams(self, division: Optional[str] = None):
-        """Obtener equipos disponibles desde la API"""
-        try:
-            url = f"{self.base_url}/teams"
-            if division:
-                url += f"?division={division}"
-                
-            logger.info(f"🔍 Obteniendo equipos desde: {url}")
-            response = self.session.get(url, timeout=15)
-            logger.info(f"📊 Teams response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                teams = data.get('teams', [])
-                logger.info(f"✅ Equipos obtenidos: {len(teams)} equipos")
-                return teams
-            else:
-                logger.error(f"❌ Error obteniendo equipos: {response.status_code}")
-                # Datos de demo como fallback
-                return self._get_demo_teams(division)
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo equipos: {e}")
-            return self._get_demo_teams(division)
-    
-    def get_available_divisions(self):
-        """Obtener divisiones disponibles desde la API"""
-        try:
-            url = f"{self.base_url}/divisions"
-            logger.info(f"🔍 Obteniendo divisiones desde: {url}")
-            response = self.session.get(url, timeout=15)
-            logger.info(f"📊 Divisions response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                divisions = data.get('divisions', {})
-                logger.info(f"✅ Divisiones obtenidas: {len(divisions)} divisiones")
-                return divisions
-            else:
-                logger.error(f"❌ Error obteniendo divisiones: {response.status_code}")
-                return self._get_demo_divisions()
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo divisiones: {e}")
-            return self._get_demo_divisions()
     
     def get_team_suggestions(self, team_name: str):
         """Obtener sugerencias de equipos"""
@@ -163,14 +186,11 @@ class APIClient:
     def _get_demo_divisions(self):
         """Divisiones de demo como fallback"""
         return {
-            'E2': 'Championship', 
-            'DEN': 'Denmark Superliga',
-            'F2': 'Ligue 2', 
-            'EC': 'Ecuador Liga Pro',
-            'I1': 'Serie A',
-            'SP': 'La Liga',
-            'E0': 'Premier League',
-            'D1': 'Bundesliga'
+            'E2': 'English League One', 
+            'DEN': 'Liga Dinamarca',
+            'F2': 'Ligue 2 (Francia)', 
+            'EC': 'National League',
+            'I1': 'Serie A (Italia)'
         }
     
     def _get_demo_teams(self, division: Optional[str] = None):
@@ -186,7 +206,6 @@ class APIClient:
         if division and division in demo_teams:
             return demo_teams[division]
         else:
-            # Todos los equipos si no hay división específica
             all_teams = []
             for teams in demo_teams.values():
                 all_teams.extend(teams)
@@ -195,7 +214,7 @@ class APIClient:
 # Inicializar cliente de API
 api_client = APIClient(NEURAL_API_URL)
 
-# HTML Template actualizado y corregido
+# HTML Template
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -269,6 +288,11 @@ HTML_TEMPLATE = '''
             background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; 
             margin: 10px 0; border-left: 4px solid #c3e6cb;
         }
+        .debug-info {
+            background: #e9ecef; padding: 10px; border-radius: 5px; 
+            margin: 10px 0; border-left: 4px solid #6c757d;
+            font-size: 0.9em;
+        }
         @media (max-width: 768px) { 
             .grid { grid-template-columns: 1fr; } 
             .metrics { grid-template-columns: 1fr; }
@@ -334,6 +358,16 @@ HTML_TEMPLATE = '''
                         🎯 Consultar Red Neuronal
                     </button>
                 </form>
+
+                <!-- Botones de debug -->
+                <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button type="button" class="btn" style="background: #6c757d;" onclick="testDebugEndpoints()">
+                        🐛 Probar Debug
+                    </button>
+                    <button type="button" class="btn" style="background: #17a2b8;" onclick="loadSampleData()">
+                        🧪 Datos de Prueba
+                    </button>
+                </div>
             </div>
             
             <div class="card result-card">
@@ -392,7 +426,7 @@ HTML_TEMPLATE = '''
                     statusElement.className = 'api-status api-online';
                     statusElement.innerHTML = '✅ API Conectada - Cargando datos...';
                     apiOnline = true;
-                    neuralModelLoaded = true; // Asumimos que está cargado si la API responde
+                    neuralModelLoaded = true;
                     updateSystemInfo(data);
                 } else {
                     statusElement.className = 'api-status api-offline';
@@ -408,7 +442,7 @@ HTML_TEMPLATE = '''
                 document.getElementById('apiStatus').innerHTML = '❌ Error de conexión - Modo demo activado';
                 apiOnline = false;
                 neuralModelLoaded = false;
-                loadDivisions(); // Intentar cargar igual con datos demo
+                loadDivisions();
             }
         }
 
@@ -459,11 +493,11 @@ HTML_TEMPLATE = '''
         function loadDemoDivisions() {
             // Divisiones de demo
             availableDivisions = {
-                'E2': 'Championship', 
-                'DEN': 'Denmark Superliga',
-                'F2': 'Ligue 2', 
-                'EC': 'Ecuador Liga Pro',
-                'I1': 'Serie A'
+                'E2': 'English League One', 
+                'DEN': 'Liga Dinamarca',
+                'F2': 'Ligue 2 (Francia)', 
+                'EC': 'National League',
+                'I1': 'Serie A (Italia)'
             };
             
             const divisionSelect = document.getElementById('division');
@@ -719,6 +753,77 @@ HTML_TEMPLATE = '''
             });
         }
 
+        // Funciones de debug
+        async function testDebugEndpoints() {
+            try {
+                console.log('🐛 Probando endpoints de debug...');
+                
+                const debugResponse = await fetch('/api/debug-teams');
+                const debugData = await debugResponse.json();
+                console.log('📊 Debug teams:', debugData);
+                
+                const testResponse = await fetch('/api/test-prediction');
+                const testData = await testResponse.json();
+                console.log('📊 Test prediction:', testData);
+                
+                // Mostrar resultados en la UI
+                document.getElementById('results').innerHTML = `
+                    <div class="debug-info">
+                        <h3>🐛 Resultados Debug</h3>
+                        <p><strong>Equipos encontrados:</strong> ${debugData.teams_count || 0}</p>
+                        <p><strong>Divisiones encontradas:</strong> ${debugData.divisions_count || 0}</p>
+                        <p><strong>Test predicción:</strong> ${testData.success ? '✅ Éxito' : '❌ Falló'}</p>
+                        ${debugData.sample_teams ? `<p><strong>Equipos de muestra:</strong> ${debugData.sample_teams.join(', ')}</p>` : ''}
+                        ${testData.error ? `<p><strong>Error:</strong> ${testData.error}</p>` : ''}
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('❌ Error en debug:', error);
+                alert('Error en pruebas de debug: ' + error.message);
+            }
+        }
+
+        function loadSampleData() {
+            // Cargar datos de prueba conocidos
+            document.getElementById('division').value = 'SP1';
+            loadTeams('SP1');
+            
+            setTimeout(() => {
+                // Buscar equipos comunes
+                const homeSelect = document.getElementById('home_team');
+                const awaySelect = document.getElementById('away_team');
+                
+                // Intentar encontrar equipos conocidos
+                const commonTeams = ['Barcelona', 'Real Madrid', 'Atletico Madrid', 'Sevilla'];
+                
+                for (let team of commonTeams) {
+                    for (let i = 0; i < homeSelect.options.length; i++) {
+                        if (homeSelect.options[i].text.includes(team)) {
+                            homeSelect.value = homeSelect.options[i].value;
+                            break;
+                        }
+                    }
+                    for (let i = 0; i < awaySelect.options.length; i++) {
+                        if (awaySelect.options[i].text.includes(team) && awaySelect.options[i].value !== homeSelect.value) {
+                            awaySelect.value = awaySelect.options[i].value;
+                            break;
+                        }
+                    }
+                }
+                
+                document.getElementById('results').innerHTML = `
+                    <div class="debug-info">
+                        <h3>🧪 Datos de Prueba Cargados</h3>
+                        <p><strong>Liga:</strong> SP1 - La Liga (España)</p>
+                        <p><strong>Equipo Local:</strong> ${homeSelect.value || 'No encontrado'}</p>
+                        <p><strong>Equipo Visitante:</strong> ${awaySelect.value || 'No encontrado'}</p>
+                        <p>Ahora puedes hacer clic en "Consultar Red Neuronal"</p>
+                    </div>
+                `;
+            }, 1000);
+        }
+
         // Event listeners
         document.getElementById('division').addEventListener('change', function() {
             if (this.value) {
@@ -790,7 +895,7 @@ def api_status():
         response_data = {
             'success': True,
             'api_online': api_online,
-            'neural_model_loaded': health_data.get('model_loaded', False) if health_data else True,
+            'neural_model_loaded': health_data.get('model_loaded', True) if health_data else True,
             'neural_api_url': NEURAL_API_URL,
             'available_teams': health_data.get('available_teams_count', 774) if health_data else 774,
             'available_divisions': health_data.get('available_divisions_count', 38) if health_data else 38,
@@ -916,7 +1021,6 @@ def api_predict():
         )
         
         if prediction:
-            # Asegurar que todos los campos necesarios estén presentes
             prediction['success'] = True
             prediction['bet_amount'] = float(data.get('bet_amount', 100))
             return jsonify(prediction)
@@ -933,6 +1037,47 @@ def api_predict():
             'error': f'Error interno: {str(e)}'
         })
 
+# Nuevos endpoints de debug
+@app.route('/api/debug-teams')
+def debug_teams():
+    """Endpoint de debug para ver equipos disponibles"""
+    try:
+        teams = api_client.get_available_teams()
+        divisions = api_client.get_available_divisions()
+        
+        return jsonify({
+            'success': True,
+            'teams_count': len(teams) if teams else 0,
+            'divisions_count': len(divisions) if divisions else 0,
+            'sample_teams': teams[:10] if teams else [],
+            'sample_divisions': list(divisions.items())[:5] if divisions else []
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/test-prediction')
+def test_prediction():
+    """Endpoint de test para probar predicción con datos conocidos"""
+    try:
+        # Probar con equipos que sabemos que existen
+        test_data = {
+            "home_team": "Barcelona",
+            "away_team": "Real Madrid", 
+            "division": "SP1",
+            "house_margin": 0.12
+        }
+        
+        logger.info(f"🧪 Test prediction con: {test_data}")
+        prediction = api_client.predict_match(**test_data)
+        
+        return jsonify({
+            'success': prediction is not None,
+            'prediction': prediction,
+            'test_data': test_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 @app.route('/health')
 def health():
     return jsonify({
@@ -944,4 +1089,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🚀 Iniciando servidor Flask en puerto {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=True)
