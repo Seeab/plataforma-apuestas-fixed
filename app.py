@@ -1,4 +1,4 @@
-# app.py - VERSIÓN CON FILTRADO CORRECTO DE EQUIPOS POR LIGA
+# app.py - VERSIÓN CON PÁGINAS ESPECÍFICAS
 import requests
 from flask import Flask, request, jsonify, render_template_string
 import os
@@ -15,6 +15,25 @@ app = Flask(__name__)
 # Configuración - URL de tu API de red neuronal
 NEURAL_API_URL = os.environ.get('NEURAL_API_URL', 'https://neural-api-predictor.onrender.com')
 logger.info(f"🔗 Conectando a API de red neuronal: {NEURAL_API_URL}")
+
+# Configuración Power BI - 3 PÁGINAS ESPECÍFICAS (REEMPLAZA LOS pageName CON LOS REALES)
+POWER_BI_URLS = {
+    "eficiencia_goles": {
+        "url": "https://app.powerbi.com/reportEmbed?reportId=2ec0624f-68a5-41cc-9ad8-bc000c7f7da6&autoAuth=true&ctid=7a01bc40-33fa-4cf5-9c99-c1cc84a7f1b7",  
+        "title": "⚽ Eficiencia de Goles",
+        "description": "Análisis de efectividad en anotación y conversión de oportunidades"
+    },
+    "promedio_tarjetas": {
+        "url": "https://app.powerbi.com/reportEmbed?reportId=ac2cae95-f6f6-4543-aab2-83ea540b2ff5&autoAuth=true&ctid=7a01bc40-33fa-4cf5-9c99-c1cc84a7f1b7", 
+        "title": "🟨 Promedio de Tarjetas", 
+        "description": "Estadísticas de disciplina: tarjetas amarillas y faltas por equipo"
+    },
+    "tiros_promedio": {
+        "url": "https://app.powerbi.com/reportEmbed?reportId=0cb0fd88-8cfd-4ff8-b128-b47b9c40e9dc&autoAuth=true&ctid=7a01bc40-33fa-4cf5-9c99-c1cc84a7f1b7", 
+        "title": "🎯 Tiros Promedio",
+        "description": "Métricas de creación de oportunidades y precisión en el remate a favor o en contra"
+    }
+}
 
 class APIClient:
     def __init__(self, base_url):
@@ -247,7 +266,7 @@ class APIClient:
 # Inicializar cliente de API
 api_client = APIClient(NEURAL_API_URL)
 
-# HTML Template (el mismo que antes con las ganancias)
+# HTML Template con 3 Páginas Power BI
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -335,6 +354,7 @@ HTML_TEMPLATE = '''
             width: 100%; 
             transition: all 0.3s ease;
             font-weight: 600;
+            margin-bottom: 8px;
         }
         .btn:hover { 
             background: #1a6a8a; 
@@ -344,6 +364,13 @@ HTML_TEMPLATE = '''
             background: #cccccc; 
             cursor: not-allowed; 
             transform: none; 
+        }
+        .btn-powerbi {
+            background: #F2C811;
+            color: #000;
+        }
+        .btn-powerbi:hover {
+            background: #e0b60f;
         }
         .result-card { 
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
@@ -417,6 +444,14 @@ HTML_TEMPLATE = '''
             font-size: clamp(0.7em, 2vw, 0.8em); 
             margin-left: 8px; 
         }
+        .powerbi-badge { 
+            background: linear-gradient(45deg, #F2C811, #FF8C00); 
+            color: black; 
+            padding: 3px 8px; 
+            border-radius: 12px; 
+            font-size: clamp(0.7em, 2vw, 0.8em); 
+            margin-left: 8px; 
+        }
         .error-message { 
             background: #f8d7da; 
             color: #721c24; 
@@ -478,6 +513,84 @@ HTML_TEMPLATE = '''
             color: #2E86AB;
         }
         
+        /* Power BI Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            padding: 20px;
+            border-radius: 12px;
+            width: 95%;
+            height: 90%;
+            position: relative;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            position: absolute;
+            right: 15px;
+            top: 10px;
+            z-index: 1001;
+        }
+        .close:hover {
+            color: #000;
+        }
+        .powerbi-iframe {
+            width: 100%;
+            height: calc(100% - 80px);
+            border: none;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .powerbi-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .powerbi-tab {
+            padding: 12px 20px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: clamp(0.9em, 2.5vw, 1em);
+        }
+        .powerbi-tab:hover {
+            background: #e0e0e0;
+            transform: translateY(-2px);
+        }
+        .powerbi-tab.active {
+            background: #2E86AB;
+            color: white;
+        }
+        .powerbi-header {
+            margin-bottom: 15px;
+        }
+        .powerbi-title {
+            font-size: clamp(1.3em, 3vw, 1.6em);
+            color: #2E86AB;
+            margin-bottom: 5px;
+        }
+        .powerbi-description {
+            color: #666;
+            font-size: clamp(0.9em, 2.5vw, 1em);
+        }
+        
         /* Tablet */
         @media (min-width: 768px) { 
             .grid { 
@@ -489,6 +602,9 @@ HTML_TEMPLATE = '''
             }
             body {
                 padding: 20px;
+            }
+            .modal-content {
+                width: 90%;
             }
         }
         
@@ -503,6 +619,9 @@ HTML_TEMPLATE = '''
             .metrics {
                 gap: 10px;
             }
+            .modal-content {
+                width: 85%;
+            }
         }
     </style>
 </head>
@@ -510,7 +629,7 @@ HTML_TEMPLATE = '''
     <div class="container">
         <div class="header">
             <h1>🏆 Plataforma de Apuestas - BI</h1>
-            <p>Predicciones con Inteligencia Artificial - Conectado a Red Neuronal</p>
+            <p>Predicciones con Inteligencia Artificial + Power BI</p>
         </div>
         
         <div id="apiStatus" class="api-status api-loading">
@@ -564,6 +683,10 @@ HTML_TEMPLATE = '''
                     <button type="button" class="btn" id="predictBtn" onclick="makePrediction()" disabled>
                         🎯 Consultar Red Neuronal
                     </button>
+                    
+                    <button type="button" class="btn btn-powerbi" onclick="openPowerBIModal('eficiencia_goles')">
+                        📊 Ver Dashboards Power BI
+                    </button>
                 </form>
             </div>
             
@@ -592,9 +715,36 @@ HTML_TEMPLATE = '''
                 <p><strong>Estado Red Neuronal:</strong> <span id="neuralStatus">Verificando...</span></p>
                 <p><strong>Equipos disponibles:</strong> <span id="teamsCount">-</span></p>
                 <p><strong>Ligas disponibles:</strong> <span id="divisionsCount">-</span></p>
-                <p><strong>Versión:</strong> 3.0 - Integración con IA</p>
+                <p><strong>Power BI:</strong> 3 páginas específicas ✅</p>
+                <p><strong>Versión:</strong> 3.0 - IA + Power BI Multi-página</p>
                 <p><strong>API URL:</strong> <code id="apiUrl" style="font-size: clamp(0.8em, 2vw, 0.9em);">''' + NEURAL_API_URL + '''</code></p>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal Power BI -->
+    <div id="powerbiModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closePowerBIModal()">&times;</span>
+            
+            <div class="powerbi-tabs">
+                <button class="powerbi-tab active" onclick="switchPowerBITab('eficiencia_goles')">
+                    ⚽ Eficiencia Goles
+                </button>
+                <button class="powerbi-tab" onclick="switchPowerBITab('promedio_tarjetas')">
+                    🟨 Promedio Tarjetas
+                </button>
+                <button class="powerbi-tab" onclick="switchPowerBITab('tiros_promedio')">
+                    🎯 Tiros Promedio
+                </button>
+            </div>
+            
+            <div class="powerbi-header">
+                <div class="powerbi-title" id="powerbiTitle">⚽ Eficiencia de Goles</div>
+                <div class="powerbi-description" id="powerbiDescription">Análisis de efectividad en anotación y conversión de oportunidades</div>
+            </div>
+            
+            <iframe id="powerbiFrame" class="powerbi-iframe" frameborder="0"></iframe>
         </div>
     </div>
 
@@ -603,7 +753,65 @@ HTML_TEMPLATE = '''
         let availableDivisions = {};
         let apiOnline = false;
 
-        // Verificar estado de la API al cargar
+        // Configuración Power BI
+        const powerBIUrls = {
+            eficiencia_goles: {
+                url: "''' + POWER_BI_URLS['eficiencia_goles']['url'] + '''",
+                title: "''' + POWER_BI_URLS['eficiencia_goles']['title'] + '''",
+                description: "''' + POWER_BI_URLS['eficiencia_goles']['description'] + '''"
+            },
+            promedio_tarjetas: {
+                url: "''' + POWER_BI_URLS['promedio_tarjetas']['url'] + '''",
+                title: "''' + POWER_BI_URLS['promedio_tarjetas']['title'] + '''", 
+                description: "''' + POWER_BI_URLS['promedio_tarjetas']['description'] + '''"
+            },
+            tiros_promedio: {
+                url: "''' + POWER_BI_URLS['tiros_promedio']['url'] + '''",
+                title: "''' + POWER_BI_URLS['tiros_promedio']['title'] + '''",
+                description: "''' + POWER_BI_URLS['tiros_promedio']['description'] + '''"
+            }
+        };
+        
+        let currentPowerBITab = 'eficiencia_goles';
+
+        // Funciones Power BI
+        function openPowerBIModal(initialTab = 'eficiencia_goles') {
+            currentPowerBITab = initialTab;
+            switchPowerBITab(initialTab);
+            document.getElementById('powerbiModal').style.display = 'block';
+        }
+
+        function closePowerBIModal() {
+            document.getElementById('powerbiModal').style.display = 'none';
+        }
+
+        function switchPowerBITab(tabName) {
+            currentPowerBITab = tabName;
+            
+            // Actualizar tabs
+            document.querySelectorAll('.powerbi-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Actualizar título y descripción
+            const tabData = powerBIUrls[tabName];
+            document.getElementById('powerbiTitle').textContent = tabData.title;
+            document.getElementById('powerbiDescription').textContent = tabData.description;
+            
+            // Cambiar iframe
+            document.getElementById('powerbiFrame').src = tabData.url;
+        }
+
+        // Cerrar modal al hacer clic fuera
+        window.onclick = function(event) {
+            const modal = document.getElementById('powerbiModal');
+            if (event.target === modal) {
+                closePowerBIModal();
+            }
+        }
+
+        // El resto del código JavaScript permanece igual...
         async function checkAPIStatus() {
             try {
                 console.log('🔍 Verificando estado de la API...');
@@ -639,7 +847,6 @@ HTML_TEMPLATE = '''
             document.getElementById('divisionsCount').textContent = data.available_divisions || '0';
         }
 
-        // Cargar divisiones disponibles
         async function loadDivisions() {
             try {
                 console.log('🔍 Cargando divisiones...');
@@ -672,7 +879,6 @@ HTML_TEMPLATE = '''
             }
         }
 
-        // Cargar equipos cuando se selecciona una división
         async function loadTeams(division) {
             const homeSelect = document.getElementById('home_team');
             const awaySelect = document.getElementById('away_team');
@@ -725,7 +931,6 @@ HTML_TEMPLATE = '''
             }
         }
 
-        // Resto del código JavaScript igual...
         async function makePrediction() {
             const homeTeam = document.getElementById('home_team').value;
             const awayTeam = document.getElementById('away_team').value;
@@ -860,7 +1065,7 @@ HTML_TEMPLATE = '''
         }
         
         function updateCharts(result) {
-            // Gráfico de probabilidades - Responsivo
+            // Gráfico de probabilidades
             Plotly.newPlot('probChart', [{
                 values: [result.probabilities.home_win, result.probabilities.draw, result.probabilities.away_win],
                 labels: [`${result.home_team} Gana`, 'Empate', `${result.away_team} Gana`],
@@ -884,7 +1089,7 @@ HTML_TEMPLATE = '''
                 margin: { t: 40, b: 20, l: 20, r: 20 }
             });
             
-            // Gráfico de cuotas - Responsivo
+            // Gráfico de cuotas
             Plotly.newPlot('oddsChart', [{
                 x: [`${result.home_team}`, 'Empate', `${result.away_team}`],
                 y: [result.odds.home_win, result.odds.draw, result.odds.away_win],
@@ -1049,7 +1254,6 @@ def api_teams():
             'total': 0
         })
 
-# Las demás rutas permanecen igual...
 @app.route('/api/team-suggestions')
 def api_team_suggestions():
     """Obtener sugerencias de equipos"""
@@ -1125,10 +1329,16 @@ def health():
     return jsonify({
         'status': 'healthy', 
         'neural_api_connected': api_client.health_check()[0],
-        'neural_api_url': NEURAL_API_URL
+        'neural_api_url': NEURAL_API_URL,
+        'powerbi_embed': True,
+        'powerbi_pages': len(POWER_BI_URLS),
+        'powerbi_titles': [data['title'] for data in POWER_BI_URLS.values()]
     })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🚀 Iniciando servidor Flask en puerto {port}")
+    logger.info(f"📊 Power BI: {len(POWER_BI_URLS)} páginas específicas")
+    for key, data in POWER_BI_URLS.items():
+        logger.info(f"   - {data['title']}")
     app.run(host="0.0.0.0", port=port, debug=False)
